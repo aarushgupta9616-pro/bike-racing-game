@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Apex Nitro - Arcade Car Racing</title>
+    <!-- Tailwind CSS for UI overlays and responsive layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js for procedural Web Audio sound effects (engine, crashes, pickups) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Google Fonts: Orbitron for racing HUD, Inter for clean UI -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Custom Game Styling */
+        :root {
+            --neon-cyan: #06b6d4;
+            --neon-pink: #ec4899;
+            --neon-amber: #f59e0b;
+            --asphalt: #1e293b;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #090d16;
+            color: #f8fafc;
+            overflow: hidden; /* Prevent scrolling during gameplay */
+            touch-action: none; /* Prevent default mobile gestures */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .font-racing {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* Canvas styling to fill responsive container */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 1rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 25px rgba(6, 182, 212, 0.15);
+        }
+
+        /* Custom Arcade Buttons */
+        .btn-arcade {
+            background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%);
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 6px 0 #1d4ed8, 0 12px 20px rgba(37, 99, 235, 0.4);
+            transition: all 0.1s ease;
+        }
+
+        .btn-arcade:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }
+
+        .btn-arcade:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 #1d4ed8, 0 4px 10px rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 0 #0f172a;
+            transition: all 0.1s ease;
+        }
+
+        .btn-secondary:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 #0f172a;
+        }
+
+        /* Touch Control Pads */
+        .touch-pad {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(8px);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            transition: transform 0.08s ease, background-color 0.08s ease;
+        }
+
+        .touch-pad:active, .touch-pad.active {
+            background: rgba(6, 182, 212, 0.45);
+            border-color: #22d3ee;
+            transform: scale(0.93);
+        }
+
+        /* Nitro Bar Pulse */
+        @keyframes nitroPulse {
+            0%, 100% { box-shadow: 0 0 10px #06b6d4; }
+            50% { box-shadow: 0 0 22px #22d3ee, 0 0 30px #3b82f6; }
+        }
+        .nitro-active {
+            animation: nitroPulse 0.4s infinite;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-between p-2 sm:p-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+
+    <!-- Top Header & Controls Bar (Outside Canvas) -->
+    <header class="w-full max-w-4xl flex items-center justify-between px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-2xl backdrop-blur-md z-20">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                <!-- Inline SVG Steering Wheel / Bolt Icon -->
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="font-racing font-black text-base sm:text-xl tracking-wider bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 bg-clip-text text-transparent">
+                    APEX NITRO
+                </h1>
+                <p class="text-[10px] sm:text-xs text-slate-400 hidden sm:block">Highway Velocity & Traffic Dodge</p>
+            </div>
+        </div>
+
+        <!-- Live Score & High Score Badges -->
+        <div class="flex items-center gap-2 sm:gap-4">
+            <div class="bg-slate-950/90 border border-slate-800 px-3 py-1 rounded-xl text-center">
+                <span class="block text-[9px] uppercase tracking-widest text-slate-400 font-semibold">Best</span>
+                <span id="hudHighScore" class="font-racing text-xs sm:text-sm font-bold text-amber-400">0</span>
+            </div>
+            <div class="bg-slate-950/90 border border-slate-800 px-3 py-1 rounded-xl text-center">
+                <span class="block text-[9px] uppercase tracking-widest text-slate-400 font-semibold">Score</span>
+                <span id="hudScore" class="font-racing text-xs sm:text-sm font-bold text-cyan-400">0</span>
+            </div>
+
+            <!-- Action Buttons (Audio & Pause) -->
+            <button id="btnAudio" class="btn-secondary p-2.5 rounded-xl text-slate-200 hover:text-cyan-400" title="Toggle Sound">
+                <svg id="iconSoundOn" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+                <svg id="iconSoundOff" class="w-5 h-5 hidden text-rose-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                </svg>
+            </button>
+
+            <button id="btnPause" class="btn-secondary p-2.5 rounded-xl text-slate-200 hover:text-amber-400 hidden" title="Pause Game">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Viewport Container -->
+    <main class="relative flex-1 w-full max-w-4xl my-2 sm:my-3 flex items-center justify-center overflow-hidden">
+        <!-- Responsive Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- In-Game Floating Telemetry HUD (Speed, Nitro, Health/Shield, Combo) -->
+        <div id="inGameHud" class="hidden absolute top-3 left-3 right-3 flex justify-between items-start pointer-events-none z-10">
+            <!-- Left: Armor / Shield & Combo -->
+            <div class="flex flex-col gap-1.5 bg-slate-950/75 backdrop-blur-md p-2.5 rounded-xl border border-slate-800/80">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-[10px] font-bold uppercase text-slate-400">Hull</span>
+                    <div id="healthPips" class="flex gap-1">
+                        <span class="w-4 h-2 rounded-sm bg-emerald-400 shadow-sm shadow-emerald-400/50"></span>
+                        <span class="w-4 h-2 rounded-sm bg-emerald-400 shadow-sm shadow-emerald-400/50"></span>
+                        <span class="w-4 h-2 rounded-sm bg-emerald-400 shadow-sm shadow-emerald-400/50"></span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold uppercase text-slate-400">Stage</span>
+                    <span id="hudStage" class="font-racing text-xs font-bold text-indigo-400">1</span>
+                    <span id="hudShieldBadge" class="hidden text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">SHIELD</span>
+                </div>
+            </div>
+
+            <!-- Center: Near-Miss / Event Toast -->
+            <div id="eventToast" class="opacity-0 transition-opacity duration-200 bg-amber-500/90 text-slate-950 font-racing font-black text-xs sm:text-sm px-3 py-1 rounded-full shadow-lg">
+                NEAR MISS +150!
+            </div>
+
+            <!-- Right: Speedometer & Nitro Gauge -->
+            <div class="flex flex-col items-end gap-1.5 bg-slate-950/75 backdrop-blur-md p-2.5 rounded-xl border border-slate-800/80">
+                <div class="flex items-baseline gap-1">
+                    <span id="hudSpeed" class="font-racing text-lg sm:text-2xl font-black text-white">0</span>
+                    <span class="text-[10px] font-bold text-cyan-400">KM/H</span>
+                </div>
+                <div class="w-24 sm:w-32">
+                    <div class="flex justify-between text-[9px] font-bold uppercase mb-0.5">
+                        <span class="text-cyan-400">Nitro</span>
+                        <span id="hudNitroPct" class="text-slate-300">100%</span>
+                    </div>
+                    <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden p-0.5">
+                        <div id="hudNitroBar" class="h-full w-full bg-gradient-to-r from-cyan-500 to-blue-400 rounded-full transition-all duration-75"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- START MENU OVERLAY -->
+        <div id="startOverlay" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md rounded-2xl flex flex-col items-center justify-center p-4 sm:p-6 text-center z-30">
+            <div class="max-w-md w-full space-y-5">
+                <div class="space-y-1">
+                    <span class="inline-block px-3 py-1 rounded-full text-[11px] font-bold tracking-widest uppercase bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                        Arcade Street Racer
+                    </span>
+                    <h2 class="font-racing text-3xl sm:text-5xl font-black tracking-tight text-white">
+                        APEX <span class="text-cyan-400">NITRO</span>
+                    </h2>
+                    <p class="text-xs sm:text-sm text-slate-400">
+                        Weave through traffic, trigger near-miss combos, and unleash Nitro boost!
+                    </p>
+                </div>
+
+                <!-- Car Paint / Class Selector -->
+                <div class="bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl space-y-2.5">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">Select Your Machine</label>
+                    <div class="grid grid-cols-3 gap-2" id="carSelector">
+                        <button data-car="viper" class="car-option active-car p-2.5 rounded-xl border-2 border-cyan-400 bg-cyan-950/40 flex flex-col items-center gap-1 transition">
+                            <span class="w-6 h-3 rounded-full bg-cyan-400 shadow-md shadow-cyan-400/50"></span>
+                            <span class="font-racing text-xs font-bold text-white">VIPER GT</span>
+                            <span class="text-[10px] text-cyan-300">Balanced</span>
+                        </button>
+                        <button data-car="crimson" class="car-option p-2.5 rounded-xl border border-slate-700 bg-slate-800/50 hover:border-slate-500 flex flex-col items-center gap-1 transition">
+                            <span class="w-6 h-3 rounded-full bg-rose-500 shadow-md shadow-rose-500/50"></span>
+                            <span class="font-racing text-xs font-bold text-white">FURY RS</span>
+                            <span class="text-[10px] text-rose-300">Top Speed</span>
+                        </button>
+                        <button data-car="volt" class="car-option p-2.5 rounded-xl border border-slate-700 bg-slate-800/50 hover:border-slate-500 flex flex-col items-center gap-1 transition">
+                            <span class="w-6 h-3 rounded-full bg-amber-400 shadow-md shadow-amber-400/50"></span>
+                            <span class="font-racing text-xs font-bold text-white">VOLT X</span>
+                            <span class="text-[10px] text-amber-300">Agile Grip</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Game Mode Selector -->
+                <div class="grid grid-cols-2 gap-2.5">
+                    <button data-mode="endless" class="mode-option p-2.5 rounded-xl border-2 border-cyan-400 bg-slate-900 text-left transition">
+                        <div class="font-racing text-xs font-bold text-cyan-400">ENDLESS RUSH</div>
+                        <div class="text-[11px] text-slate-400">Survive & climb stages</div>
+                    </button>
+                    <button data-mode="timeattack" class="mode-option p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-left hover:border-slate-600 transition">
+                        <div class="font-racing text-xs font-bold text-amber-400">TIME TRIAL (60s)</div>
+                        <div class="text-[11px] text-slate-400">Max score in 60 seconds</div>
+                    </button>
+                </div>
+
+                <!-- Start Race CTA -->
+                <button id="btnStartGame" class="btn-arcade w-full py-3.5 rounded-2xl font-racing font-black text-base sm:text-lg tracking-wider text-white uppercase">
+                    IGNITE ENGINE
+                </button>
+
+                <!-- Desktop Controls Legend -->
+                <div class="hidden sm:flex justify-center gap-4 text-[11px] text-slate-400 pt-1">
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">←</kbd> <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">→</kbd> / <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">A</kbd> <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">D</kbd> Steer</span>
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">↑</kbd> / <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">W</kbd> Gas</span>
+                    <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">SPACE</kbd> / <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-200">SHIFT</kbd> Nitro</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAUSE OVERLAY -->
+        <div id="pauseOverlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-md rounded-2xl flex flex-col items-center justify-center p-6 text-center z-30">
+            <h2 class="font-racing text-3xl font-black text-white mb-2">RACE PAUSED</h2>
+            <p class="text-sm text-slate-400 mb-6">Take a breather. The highway awaits.</p>
+            <div class="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+                <button id="btnResume" class="btn-arcade flex-1 py-3 rounded-xl font-racing font-bold text-sm text-white">RESUME</button>
+                <button id="btnQuit" class="btn-secondary flex-1 py-3 rounded-xl font-racing font-bold text-sm text-slate-300">MAIN MENU</button>
+            </div>
+        </div>
+
+        <!-- GAME OVER OVERLAY -->
+        <div id="gameOverOverlay" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md rounded-2xl flex flex-col items-center justify-center p-6 text-center z-30">
+            <span id="gameOverReason" class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest bg-rose-500/20 text-rose-400 border border-rose-500/30 mb-2">
+                WRECKED!
+            </span>
+            <h2 class="font-racing text-3xl sm:text-4xl font-black text-white mb-1">RACE FINISHED</h2>
+            <p id="newHighBadge" class="hidden text-xs font-bold text-amber-400 tracking-wider uppercase mb-4">★ NEW HIGH SCORE ★</p>
+
+            <!-- Telemetry Summary Grid -->
+            <div class="grid grid-cols-3 gap-2.5 w-full max-w-md my-4">
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                    <div class="text-[10px] uppercase text-slate-400 font-semibold">Final Score</div>
+                    <div id="finalScore" class="font-racing text-lg sm:text-xl font-black text-cyan-400">0</div>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                    <div class="text-[10px] uppercase text-slate-400 font-semibold">Distance</div>
+                    <div id="finalDistance" class="font-racing text-lg sm:text-xl font-black text-white">0.0 km</div>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                    <div class="text-[10px] uppercase text-slate-400 font-semibold">Near Misses</div>
+                    <div id="finalNearMiss" class="font-racing text-lg sm:text-xl font-black text-amber-400">0</div>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-3 w-full max-w-md mt-2">
+                <button id="btnRestart" class="btn-arcade flex-1 py-3.5 rounded-xl font-racing font-black text-sm tracking-wider text-white">
+                    RACE AGAIN
+                </button>
+                <button id="btnMenuFromOver" class="btn-secondary py-3.5 px-5 rounded-xl font-racing font-bold text-sm text-slate-300">
+                    GARAGE
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Bottom Touch & Action Controls Bar (Outside Canvas, Always Accessible) -->
+    <footer id="controlBar" class="w-full max-w-4xl flex items-center justify-between gap-2 sm:gap-4 px-1 pb-1 z-20">
+        <!-- Left Steering Controls -->
+        <div class="flex items-center gap-2 sm:gap-3">
+            <button id="touchLeft" class="touch-pad w-16 h-14 sm:w-20 sm:h-14 rounded-2xl flex items-center justify-center text-white" aria-label="Steer Left">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+            </button>
+            <button id="touchRight" class="touch-pad w-16 h-14 sm:w-20 sm:h-14 rounded-2xl flex items-center justify-center text-white" aria-label="Steer Right">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- Center Time Trial Clock (Visible only in Time Trial Mode) -->
+        <div id="timeTrialBox" class="hidden flex-col items-center bg-slate-900/90 border border-amber-500/40 px-4 py-1.5 rounded-2xl">
+            <span class="text-[9px] uppercase tracking-widest text-amber-400 font-bold">Time Left</span>
+            <span id="hudTimer" class="font-racing text-base sm:text-xl font-black text-white">60.0s</span>
+        </div>
+
+        <!-- Right Pedal & Nitro Controls -->
+        <div class="flex items-center gap-2 sm:gap-3">
+            <button id="touchBrake" class="touch-pad px-3.5 h-14 rounded-2xl flex flex-col items-center justify-center text-rose-400" aria-label="Brake">
+                <span class="font-racing text-[11px] font-bold">BRAKE</span>
+            </button>
+            <button id="touchNitro" class="touch-pad px-4 sm:px-6 h-14 rounded-2xl flex flex-col items-center justify-center text-cyan-300 border-cyan-500/40" aria-label="Nitro Boost">
+                <span class="font-racing text-xs sm:text-sm font-black tracking-wider">NITRO</span>
+                <span class="text-[9px] text-cyan-400/80 hidden sm:inline">HOLD</span>
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        /**
+         * APEX NITRO - Complete Arcade Racing Engine
+         * Features:
+         * - Responsive HTML5 Canvas with DPR scaling and dynamic lane geometry
+         * - Vehicle Classes (Viper GT, Fury RS, Volt X) with unique handling & speed stats
+         * - Endless Mode & 60s Time Trial Mode
+         * - Enemy Traffic AI (Sedans, Trucks, Sports Cars, Lane-Changers)
+         * - Power-ups (Nitro Refill, Energy Shield, Repair Wrench, Score Multiplier)
+         * - Near-Miss Detection & Combo System
+         * - Particle Systems (Exhaust flames, tire smoke, sparks, explosions, speed lines)
+         * - Procedural Web Audio Sound Effects via Tone.js (no external audio assets)
+         */
+
+        // ==========================================
+        // 1. AUDIO ENGINE (Tone.js Procedural Synth)
+        // ==========================================
+        class SoundManager {
+            constructor() {
+                this.enabled = true;
+                this.initialized = false;
+                this.engineOsc = null;
+                this.engineGain = null;
+                this.sfxSynth = null;
+                this.noiseSynth = null;
+            }
+
+            async init() {
+                if (this.initialized) return;
+                try {
+                    await Tone.start();
+                    
+                    // Continuous Engine Hum (Sawtooth filtered for warm rumble)
+                    const filter = new Tone.Filter(140, "lowpass").toDestination();
+                    this.engineGain = new Tone.Gain(0.06).connect(filter);
+                    this.engineOsc = new Tone.Oscillator(55, "sawtooth").connect(this.engineGain);
+                    this.engineOsc.start();
+
+                    // PolySynth for pickups, near-misses, countdowns
+                    this.sfxSynth = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: "triangle" },
+                        envelope: { attack: 0.01, decay: 0.15, sustain: 0.05, release: 0.2 }
+                    }).toDestination();
+                    this.sfxSynth.volume.value = -8;
+
+                    // Noise Synth for crashes & tire screeches
+                    this.noiseSynth = new Tone.NoiseSynth({
+                        noise: { type: "brown" },
+                        envelope: { attack: 0.01, decay: 0.35, sustain: 0, release: 0.1 }
+                    }).toDestination();
+                    this.noiseSynth.volume.value = -4;
+
+                    this.initialized = true;
+                } catch (e) {
+                    console.warn("Audio initialization deferred:", e);
+                }
+            }
+
+            setEnabled(state) {
+                this.enabled = state;
+                if (this.engineGain) {
+                    this.engineGain.gain.rampTo(state && game.state === 'PLAYING' ? 0.06 : 0, 0.1);
+                }
+            }
+
+            updateEngine(speedRatio, isNitro) {
+                if (!this.initialized || !this.enabled || game.state !== 'PLAYING') {
+                    if (this.engineGain) this.engineGain.gain.rampTo(0, 0.1);
+                    return;
+                }
+                const baseFreq = 45 + speedRatio * 95 + (isNitro ? 35 : 0);
+                this.engineOsc.frequency.rampTo(baseFreq, 0.08);
+                this.engineGain.gain.rampTo(isNitro ? 0.11 : 0.06, 0.1);
+            }
+
+            playPickup(type) {
+                if (!this.initialized || !this.enabled) return;
+                if (type === 'nitro') {
+                    this.sfxSynth.triggerAttackRelease(["C5", "E5", "G5"], "16n");
+                } else if (type === 'shield') {
+                    this.sfxSynth.triggerAttackRelease(["D5", "F#5", "A5"], "16n");
+                } else if (type === 'repair') {
+                    this.sfxSynth.triggerAttackRelease(["G4", "B4", "D5"], "16n");
+                } else {
+                    this.sfxSynth.triggerAttackRelease(["E5", "B5"], "32n");
+                }
+            }
+
+            playNearMiss() {
+                if (!this.initialized || !this.enabled) return;
+                this.sfxSynth.triggerAttackRelease(["A5", "E6"], "32n");
+            }
+
+            playCrash(fatal = false) {
+                if (!this.initialized || !this.enabled) return;
+                this.noiseSynth.triggerAttackRelease(fatal ? "0.6" : "0.25");
+                this.sfxSynth.triggerAttackRelease(fatal ? ["C2", "F#2"] : ["G2"], "8n");
+            }
+        }
+
+        const sound = new SoundManager();
+
+        // ==========================================
+        // 2. GAME CONFIGURATION & VEHICLE SPECS
+        // ==========================================
+        const CAR_SPECS = {
+            viper: {
+                name: 'Viper GT',
+                primary: '#06b6d4',
+                secondary: '#0284c7',
+                accent: '#e0f2fe',
+                maxSpeed: 980,
+                accel: 520,
+                handling: 560,
+                nitroDrain: 28
+            },
+            crimson: {
+                name: 'Fury RS',
+                primary: '#f43f5e',
+                secondary: '#be123c',
+                accent: '#ffe4e6',
+                maxSpeed: 1120,
+                accel: 580,
+                handling: 490,
+                nitroDrain: 32
+            },
+            volt: {
+                name: 'Volt X',
+                primary: '#f59e0b',
+                secondary: '#b45309',
+                accent: '#fef3c7',
+                maxSpeed: 940,
+                accel: 640,
+                handling: 680,
+                nitroDrain: 24
+            }
+        };
+
+        const POWERUP_TYPES = [
+            { id: 'nitro', color: '#06b6d4', label: 'N2O' },
+            { id: 'shield', color: '#8b5cf6', label: 'SHD' },
+            { id: 'repair', color: '#10b981', label: '+HP' },
+            { id: 'coin', color: '#f59e0b', label: '500' }
+        ];
+
+        // ==========================================
+        // 3. CANVAS & RESPONSIVE SCALING SETUP
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = 800;
+        let height = 600;
+        let roadLeft = 100;
+        let roadRight = 700;
+        let roadWidth = 600;
+        let laneCount = 4;
+        let laneWidth = 150;
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const rect = container.getBoundingClientRect();
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+            width = rect.width;
+            height = rect.height;
+
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            // Responsive lane count & road margins
+            laneCount = width < 520 ? 3 : 4;
+            const maxRoadW = Math.min(width * 0.86, 560);
+            roadWidth = maxRoadW;
+            roadLeft = (width - roadWidth) / 2;
+            roadRight = roadLeft + roadWidth;
+            laneWidth = roadWidth / laneCount;
+
+            if (game && game.player) {
+                game.player.y = height - Math.max(105, height * 0.16);
+                game.player.x = Math.max(roadLeft + game.player.w / 2, Math.min(roadRight - game.player.w / 2, game.player.x));
+            }
+        }
+
+        // ==========================================
+        // 4. CORE GAME STATE & ENTITIES
+        // ==========================================
+        const game = {
+            state: 'MENU', // MENU, PLAYING, PAUSED, GAMEOVER
+            mode: 'endless', // endless, timeattack
+            selectedCar: 'viper',
+            score: 0,
+            highScore: parseInt(localStorage.getItem('apexNitroHighScore') || '0', 10),
+            distance: 0, // in meters
+            nearMissCount: 0,
+            stage: 1,
+            timeLeft: 60.0,
+            roadScroll: 0,
+            shakeTimer: 0,
+            shakeIntensity: 0,
+            spawnTimer: 0,
+            powerupTimer: 4,
+            sceneryTimer: 0,
+            player: null,
+            traffic: [],
+            powerups: [],
+            particles: [],
+            scenery: [],
+            floatingTexts: [],
+            keys: {
+                left: false,
+                right: false,
+                up: false,
+                down: false,
+                nitro: false
+            }
+        };
+
+        // Initialize Player Vehicle Object
+        function createPlayer() {
+            const spec = CAR_SPECS[game.selectedCar];
+            const carW = Math.min(44, laneWidth * 0.46);
+            const carH = carW * 1.85;
+            return {
+                x: width / 2,
+                y: height - Math.max(105, height * 0.16),
+                w: carW,
+                h: carH,
+                vx: 0,
+                speed: 380,
+                baseMinSpeed: 340,
+                maxSpeed: spec.maxSpeed,
+                accel: spec.accel,
+                handling: spec.handling,
+                nitroDrain: spec.nitroDrain,
+                nitro: 100,
+                isNitro: false,
+                health: 3,
+                maxHealth: 3,
+                shield: false,
+                invulnTimer: 0,
+                tilt: 0,
+                spec: spec
+            };
+        }
+
+        // ==========================================
+        // 5. INPUT HANDLING (Keyboard + Touch)
+        // ==========================================
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowLeft', 'KeyA'].includes(e.code)) game.keys.left = true;
+            if (['ArrowRight', 'KeyD'].includes(e.code)) game.keys.right = true;
+            if (['ArrowUp', 'KeyW'].includes(e.code)) game.keys.up = true;
+            if (['ArrowDown', 'KeyS'].includes(e.code)) game.keys.down = true;
+            if (['Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) {
+                e.preventDefault();
+                game.keys.nitro = true;
+            }
+            if (e.code === 'Escape' || e.code === 'KeyP') {
+                if (game.state === 'PLAYING') pauseGame();
+                else if (game.state === 'PAUSED') resumeGame();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (['ArrowLeft', 'KeyA'].includes(e.code)) game.keys.left = false;
+            if (['ArrowRight', 'KeyD'].includes(e.code)) game.keys.right = false;
+            if (['ArrowUp', 'KeyW'].includes(e.code)) game.keys.up = false;
+            if (['ArrowDown', 'KeyS'].includes(e.code)) game.keys.down = false;
+            if (['Space', 'ShiftLeft', 'ShiftRight'].includes(e.code)) game.keys.nitro = false;
+        });
+
+        // Bind Touch Buttons cleanly
+        function bindTouchControl(elementId, keyName) {
+            const el = document.getElementById(elementId);
+            const activate = (e) => {
+                e.preventDefault();
+                game.keys[keyName] = true;
+                el.classList.add('active');
+            };
+            const deactivate = (e) => {
+                e.preventDefault();
+                game.keys[keyName] = false;
+                el.classList.remove('active');
+            };
+            el.addEventListener('touchstart', activate, { passive: false });
+            el.addEventListener('touchend', deactivate, { passive: false });
+            el.addEventListener('touchcancel', deactivate, { passive: false });
+            el.addEventListener('mousedown', activate);
+            el.addEventListener('mouseup', deactivate);
+            el.addEventListener('mouseleave', deactivate);
+        }
+
+        bindTouchControl('touchLeft', 'left');
+        bindTouchControl('touchRight', 'right');
+        bindTouchControl('touchBrake', 'down');
+        bindTouchControl('touchNitro', 'nitro');
+
+        // Swipe / Drag on Canvas for intuitive mobile steering
+        let touchStartX = null;
+        canvas.addEventListener('touchstart', (e) => {
+            if (game.state !== 'PLAYING') return;
+            touchStartX = e.touches[0].clientX;
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (game.state !== 'PLAYING' || touchStartX === null) return;
+            const currentX = e.touches[0].clientX;
+            const deltaX = currentX - touchStartX;
+            if (Math.abs(deltaX) > 8) {
+                game.keys.left = deltaX < 0;
+                game.keys.right = deltaX > 0;
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchend', () => {
+            touchStartX = null;
+            game.keys.left = false;
+            game.keys.right = false;
+        });
+
+        // ==========================================
+        // 6. SPAWNERS & PARTICLE EFFECTS
+        // ==========================================
+        function spawnTrafficVehicle() {
+            const lane = Math.floor(Math.random() * laneCount);
+            const laneCenter = roadLeft + laneWidth * (lane + 0.5);
+
+            // Prevent overlapping spawns in the same lane near top
+            const tooClose = game.traffic.some(t => Math.abs(t.x - laneCenter) < laneWidth * 0.6 && t.y < 160);
+            if (tooClose) return;
+
+            const types = [
+                { type: 'sedan', w: 0.44, h: 1.8, speedMult: 0.45, colors: ['#94a3b8', '#64748b', '#e2e8f0', '#38bdf8'] },
+                { type: 'sport', w: 0.45, h: 1.85, speedMult: 0.62, colors: ['#a855f7', '#ec4899', '#14b8a6'] },
+                { type: 'truck', w: 0.54, h: 2.5, speedMult: 0.34, colors: ['#d97706', '#475569', '#dc2626'] }
+            ];
+
+            const spec = types[Math.floor(Math.random() * types.length)];
+            const carW = Math.min(48, laneWidth * spec.w);
+            const carH = carW * spec.h;
+            const color = spec.colors[Math.floor(Math.random() * spec.colors.length)];
+
+            // Higher stages introduce lane-changing AI cars
+            const canSwitchLane = game.stage >= 2 && spec.type !== 'truck' && Math.random() < 0.25;
+
+            game.traffic.push({
+                x: laneCenter,
+                y: -carH - 20,
+                w: carW,
+                h: carH,
+                lane: lane,
+                targetX: laneCenter,
+                speed: (220 + game.stage * 28) * spec.speedMult + Math.random() * 60,
+                color: color,
+                type: spec.type,
+                nearMissed: false,
+                canSwitchLane: canSwitchLane,
+                switchTriggered: false,
+                blinkTimer: 0
+            });
+        }
+
+        function spawnPowerup() {
+            const lane = Math.floor(Math.random() * laneCount);
+            const laneCenter = roadLeft + laneWidth * (lane + 0.5);
+            const template = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+
+            game.powerups.push({
+                x: laneCenter,
+                y: -40,
+                r: 16,
+                type: template.id,
+                color: template.color,
+                label: template.label,
+                pulse: 0
+            });
+        }
+
+        function spawnScenery() {
+            const isLeft = Math.random() < 0.5;
+            const margin = roadLeft;
+            if (margin < 24) return;
+
+            const x = isLeft
+                ? Math.random() * (roadLeft - 24) + 12
+                : roadRight + 12 + Math.random() * (width - roadRight - 24);
+
+            const kind = Math.random() < 0.65 ? 'tree' : 'light';
+            game.scenery.push({
+                x,
+                y: -40,
+                kind,
+                size: 10 + Math.random() * 8
+            });
+        }
+
+        function emitParticles(x, y, count, color, speedScale = 1, life = 0.4) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = (30 + Math.random() * 140) * speedScale;
+                game.particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd,
+                    life,
+                    maxLife: life,
+                    size: 2.5 + Math.random() * 4,
+                    color
+                });
+            }
+        }
+
+        function addFloatingText(x, y, text, color = '#fbbf24') {
+            game.floatingTexts.push({
+                x,
+                y,
+                text,
+                color,
+                life: 0.9
+            });
+        }
+
+        function triggerToast(text) {
+            const toast = document.getElementById('eventToast');
+            toast.textContent = text;
+            toast.style.opacity = '1';
+            clearTimeout(toast._timeout);
+            toast._timeout = setTimeout(() => {
+                toast.style.opacity = '0';
+            }, 950);
+        }
+
+        // ==========================================
+        // 7. GAME FLOW CONTROLS
+        // ==========================================
+        function startGame() {
+            sound.init();
+            resizeCanvas();
+
+            game.state = 'PLAYING';
+            game.score = 0;
+            game.distance = 0;
+            game.nearMissCount = 0;
+            game.stage = 1;
+            game.timeLeft = 60.0;
+            game.traffic = [];
+            game.powerups = [];
+            game.particles = [];
+            game.scenery = [];
+            game.floatingTexts = [];
+            game.spawnTimer = 0.5;
+            game.powerupTimer = 3.0;
+            game.player = createPlayer();
+
+            // Pre-populate side scenery
+            for (let y = 0; y < height; y += 90) {
+                spawnScenery();
+                if (game.scenery.length > 0) {
+                    game.scenery[game.scenery.length - 1].y = y;
+                }
+            }
+
+            // Update UI Overlays
+            document.getElementById('startOverlay').classList.add('hidden');
+            document.getElementById('pauseOverlay').classList.add('hidden');
+            document.getElementById('gameOverOverlay').classList.add('hidden');
+            document.getElementById('inGameHud').classList.remove('hidden');
+            document.getElementById('btnPause').classList.remove('hidden');
+
+            const ttBox = document.getElementById('timeTrialBox');
+            if (game.mode === 'timeattack') {
+                ttBox.classList.remove('hidden');
+                ttBox.classList.add('flex');
+            } else {
+                ttBox.classList.add('hidden');
+                ttBox.classList.remove('flex');
+            }
+
+            updateHUD();
+        }
+
+        function pauseGame() {
+            if (game.state !== 'PLAYING') return;
+            game.state = 'PAUSED';
+            sound.updateEngine(0, false);
+            document.getElementById('pauseOverlay').classList.remove('hidden');
+        }
+
+        function resumeGame() {
+            if (game.state !== 'PAUSED') return;
+            game.state = 'PLAYING';
+            lastTimestamp = performance.now();
+            document.getElementById('pauseOverlay').classList.add('hidden');
+        }
+
+        function returnToMenu() {
+            game.state = 'MENU';
+            sound.updateEngine(0, false);
+            document.getElementById('pauseOverlay').classList.add('hidden');
+            document.getElementById('gameOverOverlay').classList.add('hidden');
+            document.getElementById('inGameHud').classList.add('hidden');
+            document.getElementById('btnPause').classList.add('hidden');
+            document.getElementById('startOverlay').classList.remove('hidden');
+        }
+
+        function endGame(reasonText = 'WRECKED!') {
+            game.state = 'GAMEOVER';
+            sound.updateEngine(0, false);
+            sound.playCrash(true);
+
+            // Check & Save High Score
+            let isNewHigh = false;
+            const finalIntScore = Math.floor(game.score);
+            if (finalIntScore > game.highScore) {
+                game.highScore = finalIntScore;
+                localStorage.setItem('apexNitroHighScore', game.highScore.toString());
+                isNewHigh = true;
+            }
+
+            document.getElementById('hudHighScore').textContent = game.highScore.toLocaleString();
+            document.getElementById('gameOverReason').textContent = reasonText;
+            document.getElementById('finalScore').textContent = finalIntScore.toLocaleString();
+            document.getElementById('finalDistance').textContent = (game.distance / 1000).toFixed(2) + ' km';
+            document.getElementById('finalNearMiss').textContent = game.nearMissCount;
+
+            const highBadge = document.getElementById('newHighBadge');
+            if (isNewHigh && finalIntScore > 0) highBadge.classList.remove('hidden');
+            else highBadge.classList.add('hidden');
+
+            document.getElementById('inGameHud').classList.add('hidden');
+            document.getElementById('btnPause').classList.add('hidden');
+            document.getElementById('gameOverOverlay').classList.remove('hidden');
+        }
+
+        // ==========================================
+        // 8. PHYSICS & SIMULATION UPDATE LOOP
+        // ==========================================
+        function update(dt) {
+            if (game.state !== 'PLAYING') return;
+
+            const p = game.player;
+
+            // Time Trial Countdown
+            if (game.mode === 'timeattack') {
+                game.timeLeft -= dt;
+                if (game.timeLeft <= 0) {
+                    game.timeLeft = 0;
+                    endGame('TIME EXPIRED!');
+                    return;
+                }
+            }
+
+            // Stage Progression based on distance
+            const newStage = Math.floor(game.distance / 850) + 1;
+            if (newStage > game.stage) {
+                game.stage = newStage;
+                triggerToast(`STAGE ${game.stage} - SPEED UP!`);
+                sound.playPickup('nitro');
+            }
+
+            // Nitro Boost Logic
+            if (game.keys.nitro && p.nitro > 4) {
+                p.isNitro = true;
+                p.nitro = Math.max(0, p.nitro - p.nitroDrain * dt);
+            } else {
+                p.isNitro = false;
+                p.nitro = Math.min(100, p.nitro + 8.5 * dt); // Passive recharge
+            }
+
+            // Forward Speed Physics
+            const stageBonus = (game.stage - 1) * 35;
+            const currentMax = (p.maxSpeed + stageBonus) * (p.isNitro ? 1.38 : 1.0);
+            const targetCruise = p.isNitro
+                ? currentMax
+                : game.keys.down
+                    ? p.baseMinSpeed * 0.65
+                    : game.keys.up
+                        ? currentMax
+                        : (p.baseMinSpeed + stageBonus + 180);
+
+            if (p.speed < targetCruise) {
+                p.speed = Math.min(targetCruise, p.speed + p.accel * (p.isNitro ? 1.8 : 1.0) * dt);
+            } else {
+                p.speed = Math.max(targetCruise, p.speed - p.accel * 1.1 * dt);
+            }
+
+            // Horizontal Steering Physics with Smooth Tilt
+            let moveDir = 0;
+            if (game.keys.left) moveDir -= 1;
+            if (game.keys.right) moveDir += 1;
+
+            const targetVx = moveDir * p.handling;
+            p.vx += (targetVx - p.vx) * Math.min(1, dt * 14);
+            p.x += p.vx * dt;
+            p.tilt += (moveDir * 0.14 - p.tilt) * Math.min(1, dt * 12);
+
+            // Road Boundary Guardrails (Soft bounce + sparks)
+            const minX = roadLeft + p.w / 2 + 4;
+            const maxX = roadRight - p.w / 2 - 4;
+            if (p.x < minX) {
+                p.x = minX;
+                p.vx = Math.abs(p.vx) * 0.3;
+                emitParticles(p.x - p.w / 2, p.y, 2, '#f59e0b', 0.7, 0.25);
+            } else if (p.x > maxX) {
+                p.x = maxX;
+                p.vx = -Math.abs(p.vx) * 0.3;
+                emitParticles(p.x + p.w / 2, p.y, 2, '#f59e0b', 0.7, 0.25);
+            }
+
+            // Invulnerability flicker timer after hit
+            if (p.invulnTimer > 0) {
+                p.invulnTimer = Math.max(0, p.invulnTimer - dt);
+            }
+
+            // Distance & Score Accumulation
+            const metersDelta = (p.speed * 0.08) * dt;
+            game.distance += metersDelta;
+            game.score += metersDelta * (p.isNitro ? 3.5 : 2.0);
+            game.roadScroll = (game.roadScroll + p.speed * dt) % 80;
+
+            // Exhaust Flame Particles
+            if (p.isNitro || Math.random() < 0.45) {
+                const flameColor = p.isNitro ? '#22d3ee' : '#f97316';
+                emitParticles(p.x - p.w * 0.22, p.y + p.h * 0.48, 1, flameColor, 0.4, 0.18);
+                emitParticles(p.x + p.w * 0.22, p.y + p.h * 0.48, 1, flameColor, 0.4, 0.18);
+            }
+
+            // Update Engine Audio Pitch
+            sound.updateEngine((p.speed - 200) / 950, p.isNitro);
+
+            // Spawners
+            game.spawnTimer -= dt;
+            if (game.spawnTimer <= 0) {
+                spawnTrafficVehicle();
+                const interval = Math.max(0.36, 1.15 - game.stage * 0.09);
+                game.spawnTimer = interval * (0.75 + Math.random() * 0.5);
+            }
+
+            game.powerupTimer -= dt;
+            if (game.powerupTimer <= 0) {
+                spawnPowerup();
+                game.powerupTimer = 5.5 + Math.random() * 3.5;
+            }
+
+            game.sceneryTimer -= dt;
+            if (game.sceneryTimer <= 0) {
+                spawnScenery();
+                game.sceneryTimer = 0.22;
+            }
+
+            // Update Traffic & Collision / Near-Miss Detection
+            for (let i = game.traffic.length - 1; i >= 0; i--) {
+                const t = game.traffic[i];
+                const relSpeed = p.speed - t.speed;
+                t.y += relSpeed * dt;
+
+                // AI Lane Switch Logic
+                if (t.canSwitchLane && !t.switchTriggered && t.y > height * 0.18 && t.y < height * 0.45) {
+                    t.switchTriggered = true;
+                    const dir = t.lane === 0 ? 1 : t.lane === laneCount - 1 ? -1 : (Math.random() < 0.5 ? -1 : 1);
+                    const nextLane = t.lane + dir;
+                    const candidateX = roadLeft + laneWidth * (nextLane + 0.5);
+                    const laneBlocked = game.traffic.some(other => other !== t && Math.abs(other.x - candidateX) < laneWidth * 0.6 && Math.abs(other.y - t.y) < 160);
+                    if (!laneBlocked) {
+                        t.lane = nextLane;
+                        t.targetX = candidateX;
+                        t.blinkTimer = 0.8;
+                    }
+                }
+
+                if (t.blinkTimer > 0) t.blinkTimer -= dt;
+                t.x += (t.targetX - t.x) * Math.min(1, dt * 5);
+
+                // Bounding Box Collision Check (slightly forgiving hitbox)
+                const hitW = (p.w + t.w) * 0.42;
+                const hitH = (p.h + t.h) * 0.43;
+                const dx = Math.abs(p.x - t.x);
+                const dy = Math.abs(p.y - t.y);
+
+                if (dx < hitW && dy < hitH) {
+                    // Collision Occurred!
+                    emitParticles((p.x + t.x) / 2, (p.y + t.y) / 2, 22, '#f97316', 1.4, 0.55);
+                    game.traffic.splice(i, 1);
+
+                    if (p.shield) {
+                        p.shield = false;
+                        p.invulnTimer = 1.0;
+                        sound.playCrash(false);
+                        triggerToast('SHIELD ABSORBED IMPACT!');
+                        game.shakeTimer = 0.25;
+                        game.shakeIntensity = 8;
+                    } else if (p.invulnTimer <= 0) {
+                        p.health -= 1;
+                        p.speed *= 0.55;
+                        p.invulnTimer = 1.4;
+                        game.shakeTimer = 0.35;
+                        game.shakeIntensity = 14;
+
+                        if (p.health <= 0) {
+                            updateHUD();
+                            endGame('VEHICLE WRECKED!');
+                            return;
+                        } else {
+                            sound.playCrash(false);
+                            triggerToast('COLLISION! HULL DAMAGED');
+                        }
+                    }
+                    continue;
+                }
+
+                // Near-Miss Detection (Close pass without colliding)
+                if (!t.nearMissed && t.y > p.y && Math.abs(t.y - p.y) < p.h * 0.85) {
+                    if (dx < hitW + 34) {
+                        t.nearMissed = true;
+                        game.nearMissCount += 1;
+                        const bonus = 150 * game.stage;
+                        game.score += bonus;
+                        p.nitro = Math.min(100, p.nitro + 12);
+                        sound.playNearMiss();
+                        addFloatingText(p.x, p.y - 45, `NEAR MISS +${bonus}`, '#38bdf8');
+                    }
+                }
+
+                // Despawn offscreen traffic
+                if (t.y > height + 150 || t.y < -400) {
+                    game.traffic.splice(i, 1);
+                }
+            }
+
+            // Update Power-ups
+            for (let i = game.powerups.length - 1; i >= 0; i--) {
+                const pw = game.powerups[i];
+                pw.y += p.speed * 0.85 * dt;
+                pw.pulse += dt * 6;
+
+                const dist = Math.hypot(p.x - pw.x, p.y - pw.y);
+                if (dist < p.w * 0.65 + pw.r) {
+                    sound.playPickup(pw.type);
+                    emitParticles(pw.x, pw.y, 14, pw.color, 1.1, 0.45);
+
+                    if (pw.type === 'nitro') {
+                        p.nitro = 100;
+                        addFloatingText(pw.x, pw.y, 'NITRO FULL!', '#22d3ee');
+                    } else if (pw.type === 'shield') {
+                        p.shield = true;
+                        addFloatingText(pw.x, pw.y, 'SHIELD ACTIVE!', '#c084fc');
+                    } else if (pw.type === 'repair') {
+                        if (p.health < p.maxHealth) {
+                            p.health += 1;
+                            addFloatingText(pw.x, pw.y, 'HULL REPAIRED!', '#34d399');
+                        } else {
+                            game.score += 300;
+                            addFloatingText(pw.x, pw.y, '+300 MAX HULL', '#34d399');
+                        }
+                    } else if (pw.type === 'coin') {
+                        game.score += 500;
+                        addFloatingText(pw.x, pw.y, '+500 BONUS!', '#fbbf24');
+                    }
+
+                    game.powerups.splice(i, 1);
+                    continue;
+                }
+
+                if (pw.y > height + 60) {
+                    game.powerups.splice(i, 1);
+                }
+            }
+
+            // Update Scenery
+            for (let i = game.scenery.length - 1; i >= 0; i--) {
+                const s = game.scenery[i];
+                s.y += p.speed * dt;
+                if (s.y > height + 60) game.scenery.splice(i, 1);
+            }
+
+            // Update Particles
+            for (let i = game.particles.length - 1; i >= 0; i--) {
+                const pt = game.particles[i];
+                pt.x += pt.vx * dt;
+                pt.y += pt.vy * dt;
+                pt.life -= dt;
+                if (pt.life <= 0) game.particles.splice(i, 1);
+            }
+
+            // Update Floating Texts
+            for (let i = game.floatingTexts.length - 1; i >= 0; i--) {
+                const ft = game.floatingTexts[i];
+                ft.y -= 55 * dt;
+                ft.life -= dt;
+                if (ft.life <= 0) game.floatingTexts.splice(i, 1);
+            }
+
+            // Screen Shake Decay
+            if (game.shakeTimer > 0) {
+                game.shakeTimer = Math.max(0, game.shakeTimer - dt);
+            }
+
+            updateHUD();
+        }
+
+        // ==========================================
+        // 9. HUD SYNCHRONIZATION
+        // ==========================================
+        function updateHUD() {
+            const p = game.player;
+            if (!p) return;
+
+            document.getElementById('hudScore').textContent = Math.floor(game.score).toLocaleString();
+            document.getElementById('hudStage').textContent = game.stage;
+
+            // Speedometer in realistic KM/H scale
+            const kmh = Math.round(p.speed * 0.28);
+            document.getElementById('hudSpeed').textContent = kmh;
+
+            // Nitro Gauge
+            const nitroPct = Math.round(p.nitro);
+            document.getElementById('hudNitroPct').textContent = `${nitroPct}%`;
+            const nitroBar = document.getElementById('hudNitroBar');
+            nitroBar.style.width = `${nitroPct}%`;
+            if (p.isNitro) nitroBar.classList.add('nitro-active');
+            else nitroBar.classList.remove('nitro-active');
+
+            // Health Pips
+            const pips = document.getElementById('healthPips').children;
+            for (let i = 0; i < pips.length; i++) {
+                if (i < p.health) {
+                    pips[i].className = 'w-4 h-2 rounded-sm bg-emerald-400 shadow-sm shadow-emerald-400/50';
+                } else {
+                    pips[i].className = 'w-4 h-2 rounded-sm bg-slate-800';
+                }
+            }
+
+            // Shield Badge
+            const shieldBadge = document.getElementById('hudShieldBadge');
+            if (p.shield) shieldBadge.classList.remove('hidden');
+            else shieldBadge.classList.add('hidden');
+
+            // Time Trial Clock
+            if (game.mode === 'timeattack') {
+                const timerEl = document.getElementById('hudTimer');
+                timerEl.textContent = game.timeLeft.toFixed(1) + 's';
+                if (game.timeLeft <= 10) timerEl.classList.add('text-rose-400');
+                else timerEl.classList.remove('text-rose-400');
+            }
+        }
+
+        // ==========================================
+        // 10. CANVAS RENDERING PIPELINE
+        // ==========================================
+        function drawCar(x, y, w, h, colors, tilt = 0, isPlayer = false, shield = false, blinkLeft = false, blinkRight = false) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(tilt);
+
+            // Drop Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+            ctx.beginPath();
+            ctx.roundRect(-w / 2 + 4, -h / 2 + 6, w, h, 8);
+            ctx.fill();
+
+            // Wheels
+            ctx.fillStyle = '#090d16';
+            const wheelW = 5;
+            const wheelH = h * 0.22;
+            ctx.fillRect(-w / 2 - 2, -h * 0.32, wheelW, wheelH);
+            ctx.fillRect(w / 2 - 3, -h * 0.32, wheelW, wheelH);
+            ctx.fillRect(-w / 2 - 2, h * 0.14, wheelW, wheelH);
+            ctx.fillRect(w / 2 - 3, h * 0.14, wheelW, wheelH);
+
+            // Main Chassis Body
+            const bodyGrad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+            bodyGrad.addColorStop(0, colors.primary);
+            bodyGrad.addColorStop(1, colors.secondary);
+            ctx.fillStyle = bodyGrad;
+            ctx.beginPath();
+            ctx.roundRect(-w / 2, -h / 2, w, h, 9);
+            ctx.fill();
+
+            // Racing Stripe (for player)
+            if (isPlayer) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+                ctx.fillRect(-3, -h / 2 + 3, 6, h - 6);
+            }
+
+            // Windshield & Rear Window
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.roundRect(-w * 0.36, -h * 0.22, w * 0.72, h * 0.2, 4);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.roundRect(-w * 0.32, h * 0.16, w * 0.64, h * 0.14, 3);
+            ctx.fill();
+
+            // Headlights
+            ctx.fillStyle = isPlayer ? '#fef08a' : '#ffffff';
+            ctx.fillRect(-w * 0.38, -h / 2 + 2, w * 0.2, 4);
+            ctx.fillRect(w * 0.18, -h / 2 + 2, w * 0.2, 4);
+
+            // Headlight Cones (Player)
+            if (isPlayer) {
+                const beamGrad = ctx.createLinearGradient(0, -h / 2, 0, -h / 2 - 95);
+                beamGrad.addColorStop(0, 'rgba(254, 240, 138, 0.26)');
+                beamGrad.addColorStop(1, 'rgba(254, 240, 138, 0)');
+                ctx.fillStyle = beamGrad;
+                ctx.beginPath();
+                ctx.moveTo(-w * 0.35, -h / 2);
+                ctx.lineTo(-w * 0.85, -h / 2 - 95);
+                ctx.lineTo(w * 0.85, -h / 2 - 95);
+                ctx.lineTo(w * 0.35, -h / 2);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Taillights
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(-w * 0.38, h / 2 - 4, w * 0.22, 3.5);
+            ctx.fillRect(w * 0.16, h / 2 - 4, w * 0.22, 3.5);
+
+            // Turn Signals for AI lane switchers
+            if (blinkLeft && Math.floor(performance.now() / 120) % 2 === 0) {
+                ctx.fillStyle = '#fbbf24';
+                ctx.fillRect(-w / 2 - 1, -h / 2 + 4, 4, 8);
+            }
+            if (blinkRight && Math.floor(performance.now() / 120) % 2 === 0) {
+                ctx.fillStyle = '#fbbf24';
+                ctx.fillRect(w / 2 - 3, -h / 2 + 4, 4, 8);
+            }
+
+            // Energy Shield Bubble
+            if (shield) {
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 3;
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, w * 0.82, h * 0.65, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        function render() {
+            ctx.save();
+
+            // Apply Camera Screen Shake
+            if (game.shakeTimer > 0) {
+                const sx = (Math.random() - 0.5) * game.shakeIntensity;
+                const sy = (Math.random() - 0.5) * game.shakeIntensity;
+                ctx.translate(sx, sy);
+            }
+
+            // 1. Outer Grass / Shoulder Environment
+            ctx.fillStyle = '#0b1322';
+            ctx.fillRect(0, 0, width, height);
+
+            // Subtle Grid / Turf Texture on shoulders
+            ctx.fillStyle = '#0f1b2e';
+            for (let y = (game.roadScroll % 80) - 80; y < height; y += 80) {
+                ctx.fillRect(0, y, roadLeft, 40);
+                ctx.fillRect(roadRight, y, width - roadRight, 40);
+            }
+
+            // 2. Scenery Props (Trees & Highway Lights)
+            for (const s of game.scenery) {
+                if (s.kind === 'tree') {
+                    ctx.fillStyle = '#064e3b';
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#10b981';
+                    ctx.beginPath();
+                    ctx.arc(s.x - 2, s.y - 2, s.size * 0.65, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.fillStyle = '#334155';
+                    ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+                    ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // 3. Asphalt Highway Surface
+            const roadGrad = ctx.createLinearGradient(roadLeft, 0, roadRight, 0);
+            roadGrad.addColorStop(0, '#1e293b');
+            roadGrad.addColorStop(0.5, '#263349');
+            roadGrad.addColorStop(1, '#1e293b');
+            ctx.fillStyle = roadGrad;
+            ctx.fillRect(roadLeft, 0, roadWidth, height);
+
+            // 4. Rumble Strips (Red/White Racing Curbs on Edges)
+            const curbH = 40;
+            for (let y = (game.roadScroll % (curbH * 2)) - curbH * 2; y < height; y += curbH) {
+                const isRed = Math.floor((y - game.roadScroll) / curbH) % 2 === 0;
+                ctx.fillStyle = isRed ? '#ef4444' : '#f8fafc';
+                ctx.fillRect(roadLeft - 8, y, 8, curbH);
+                ctx.fillRect(roadRight, y, 8, curbH);
+            }
+
+            // 5. Dashed Lane Dividers
+            ctx.strokeStyle = 'rgba(248, 250, 252, 0.45)';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([36, 44]);
+            ctx.lineDashOffset = -game.roadScroll;
+
+            for (let i = 1; i < laneCount; i++) {
+                const lx = roadLeft + laneWidth * i;
+                ctx.beginPath();
+                ctx.moveTo(lx, 0);
+                ctx.lineTo(lx, height);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            // 6. Power-ups
+            for (const pw of game.powerups) {
+                const pulseR = pw.r + Math.sin(pw.pulse) * 3;
+                ctx.save();
+                ctx.translate(pw.x, pw.y);
+
+                // Glow ring
+                ctx.fillStyle = pw.color + '33';
+                ctx.beginPath();
+                ctx.arc(0, 0, pulseR + 5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Core badge
+                ctx.fillStyle = pw.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, pw.r, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#090d16';
+                ctx.font = 'bold 10px Orbitron, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(pw.label, 0, 1);
+                ctx.restore();
+            }
+
+            // 7. Traffic Vehicles
+            for (const t of game.traffic) {
+                const blinkLeft = t.blinkTimer > 0 && t.targetX < t.x;
+                const blinkRight = t.blinkTimer > 0 && t.targetX > t.x;
+                drawCar(
+                    t.x, t.y, t.w, t.h,
+                    { primary: t.color, secondary: '#1e293b' },
+                    0, false, false, blinkLeft, blinkRight
+                );
+            }
+
+            // 8. Player Car (with Invulnerability Blink)
+            if (game.player) {
+                const p = game.player;
+                const visible = p.invulnTimer <= 0 || Math.floor(p.invulnTimer * 16) % 2 === 0;
+                if (visible) {
+                    drawCar(p.x, p.y, p.w, p.h, p.spec, p.tilt, true, p.shield);
+                }
+
+                // Nitro Speed Lines Overlay
+                if (p.isNitro) {
+                    ctx.strokeStyle = 'rgba(34, 211, 238, 0.35)';
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 8; i++) {
+                        const lx = roadLeft + Math.random() * roadWidth;
+                        const ly = Math.random() * height;
+                        ctx.beginPath();
+                        ctx.moveTo(lx, ly);
+                        ctx.lineTo(lx, ly + 65);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            // 9. Particles
+            for (const pt of game.particles) {
+                ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+                ctx.fillStyle = pt.color;
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // 10. Floating Score / Callout Texts
+            for (const ft of game.floatingTexts) {
+                ctx.globalAlpha = Math.max(0, ft.life);
+                ctx.fillStyle = ft.color;
+                ctx.font = '800 13px Orbitron, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(ft.text, ft.x, ft.y);
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // 11. MAIN ANIMATION LOOP & UI WIRING
+        // ==========================================
+        let lastTimestamp = 0;
+        function gameLoop(timestamp) {
+            const dt = Math.min(0.05, (timestamp - lastTimestamp) / 1000 || 0.016);
+            lastTimestamp = timestamp;
+
+            if (game.state === 'MENU') {
+                // Idle animated road preview behind menu
+                game.roadScroll = (game.roadScroll + 260 * dt) % 80;
+            } else {
+                update(dt);
+            }
+
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Car Selection UI Buttons
+        document.querySelectorAll('.car-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.car-option').forEach(b => {
+                    b.classList.remove('border-2', 'border-cyan-400', 'bg-cyan-950/40');
+                    b.classList.add('border', 'border-slate-700', 'bg-slate-800/50');
+                });
+                btn.classList.remove('border', 'border-slate-700', 'bg-slate-800/50');
+                btn.classList.add('border-2', 'border-cyan-400', 'bg-cyan-950/40');
+                game.selectedCar = btn.dataset.car;
+            });
+        });
+
+        // Mode Selection UI Buttons
+        document.querySelectorAll('.mode-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.mode-option').forEach(b => {
+                    b.classList.remove('border-2', 'border-cyan-400', 'bg-slate-900');
+                    b.classList.add('border', 'border-slate-800', 'bg-slate-900/60');
+                });
+                btn.classList.remove('border', 'border-slate-800', 'bg-slate-900/60');
+                btn.classList.add('border-2', 'border-cyan-400', 'bg-slate-900');
+                game.mode = btn.dataset.mode;
+            });
+        });
+
+        // Menu & HUD Button Listeners
+        document.getElementById('btnStartGame').addEventListener('click', startGame);
+        document.getElementById('btnRestart').addEventListener('click', startGame);
+        document.getElementById('btnMenuFromOver').addEventListener('click', returnToMenu);
+        document.getElementById('btnPause').addEventListener('click', pauseGame);
+        document.getElementById('btnResume').addEventListener('click', resumeGame);
+        document.getElementById('btnQuit').addEventListener('click', returnToMenu);
+
+        document.getElementById('btnAudio').addEventListener('click', () => {
+            const nextState = !sound.enabled;
+            sound.setEnabled(nextState);
+            document.getElementById('iconSoundOn').classList.toggle('hidden', !nextState);
+            document.getElementById('iconSoundOff').classList.toggle('hidden', nextState);
+        });
+
+        // Initialize on Window Load
+        window.addEventListener('resize', resizeCanvas);
+        window.onload = function () {
+            document.getElementById('hudHighScore').textContent = game.highScore.toLocaleString();
+            resizeCanvas();
+            lastTimestamp = performance.now();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
